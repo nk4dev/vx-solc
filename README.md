@@ -1,2 +1,4 @@
-# vx-ether
-VX3 related Ethereum extension
+# @vx3/solc-compiler
+
+## author
+[nk4dev](https://nknighta.me/g)
