@@ -1,7 +1,22 @@
 {
   "name": "@vx3/solc-compiler",
-  "module": "index.ts",
   "version": "0.0.1",
+  "description": "VXC — VX3 Solidity compiler frontend (lexer, import resolver, artifact pipeline) with solc backend",
+  "main": "index.ts",
+  "module": "index.ts",
+  "types": "index.ts",
   "type": "module",
-  "private": true
+  "bin": {
+    "vxc": "./src/cli.ts",
+    "solc-compiler": "./src/cli.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "solc": "^0.8.30"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
+  }
 }

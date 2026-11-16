@@ -1,0 +1,152 @@
+import { describe, it, expect } from 'bun:test';
+import { lex, extractPragmaVersion } from '../src/lexer';
+
+describe('lex()', () => {
+  it('extracts pragma solidity', () => {
+    const tokens = lex('pragma solidity ^0.8.20;');
+    expect(tokens).toEqual([{ kind: 'pragma', value: 'solidity ^0.8.20', line: 1 }]);
+  });
+
+  it('extracts import with named specifier (from syntax)', () => {
+    const src = 'import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";';
+    const tokens = lex(src);
+    expect(tokens).toContainEqual({
+      kind: 'import',
+      path: '@openzeppelin/contracts/token/ERC20/ERC20.sol',
+      line: 1,
+    });
+  });
+
+  it('extracts bare import', () => {
+    const tokens = lex('import "./utils/Math.sol";');
+    expect(tokens).toContainEqual({
+      kind: 'import',
+      path: './utils/Math.sol',
+      line: 1,
+    });
+  });
+
+  it('extracts wildcard import (import * as X from "…")', () => {
+    const tokens = lex('import * as Lib from "./Lib.sol";');
+    expect(tokens).toContainEqual({
+      kind: 'import',
+      path: './Lib.sol',
+      line: 1,
+    });
+  });
+
+  it('extracts import with alias (import "path" as Alias)', () => {
+    const tokens = lex('import "./Lib.sol" as Lib;');
+    expect(tokens).toContainEqual({
+      kind: 'import',
+      path: './Lib.sol',
+      line: 1,
+    });
+  });
+
+  it('extracts multiline import statements', () => {
+    const src = `
+import {
+  IERC20,
+  IERC20Metadata
+} from "./interfaces/IERC20.sol";
+    `.trim();
+    const tokens = lex(src);
+    expect(tokens).toContainEqual({
+      kind: 'import',
+      path: './interfaces/IERC20.sol',
+      line: 1,
+    });
+  });
+
+  it('extracts contract name', () => {
+    const tokens = lex('contract Token is ERC20 {');
+    expect(tokens).toContainEqual({ kind: 'contract', name: 'Token', line: 1 });
+  });
+
+  it('extracts library name', () => {
+    const tokens = lex('library SafeMath {');
+    expect(tokens).toContainEqual({ kind: 'contract', name: 'SafeMath', line: 1 });
+  });
+
+  it('extracts interface name', () => {
+    const tokens = lex('interface IERC20 {');
+    expect(tokens).toContainEqual({ kind: 'contract', name: 'IERC20', line: 1 });
+  });
+
+  it('extracts abstract contract name', () => {
+    const tokens = lex('abstract contract BaseToken {');
+    expect(tokens).toContainEqual({ kind: 'contract', name: 'BaseToken', line: 1 });
+  });
+
+  it('strips // line comments — tokens inside are not parsed', () => {
+    const tokens = lex('// import "./fake.sol";\npragma solidity ^0.8.0;');
+    expect(tokens.filter((t) => t.kind === 'import')).toHaveLength(0);
+    expect(tokens).toContainEqual({ kind: 'pragma', value: 'solidity ^0.8.0', line: 2 });
+  });
+
+  it('strips /* */ block comments and preserves line numbering', () => {
+    const src = '/* \nimport "./fake.sol";\n */\nimport "./real.sol";';
+    const tokens = lex(src);
+    const imports = tokens.filter((t) => t.kind === 'import');
+    expect(imports).toHaveLength(1);
+    expect(imports[0].path).toBe('./real.sol');
+    expect(imports[0].line).toBe(4);
+  });
+
+  it('does not parse import paths inside string literals', () => {
+    const src = 'string s = "import \'./fake.sol\';";\nimport "./real.sol";';
+    const tokens = lex(src);
+    const imports = tokens.filter((t) => t.kind === 'import');
+    expect(imports).toHaveLength(1);
+    expect(imports[0].path).toBe('./real.sol');
+    expect(imports[0].line).toBe(2);
+  });
+
+  it('records correct 1-based line numbers', () => {
+    const src = 'pragma solidity ^0.8.0;\n\nimport "./Lib.sol";';
+    const tokens = lex(src);
+    const pragma = tokens.find((t) => t.kind === 'pragma');
+    const imp = tokens.find((t) => t.kind === 'import');
+    expect(pragma?.line).toBe(1);
+    expect(imp?.line).toBe(3);
+  });
+
+  it('returns empty array for empty source', () => {
+    expect(lex('')).toEqual([]);
+  });
+
+  it('handles a complete multi-declaration source', () => {
+    const src = [
+      'pragma solidity ^0.8.20;',
+      'import "./Lib.sol";',
+      'interface IToken {}',
+      'contract Token is IToken {}',
+    ].join('\n');
+    const tokens = lex(src);
+    expect(tokens.filter((t) => t.kind === 'pragma')).toHaveLength(1);
+    expect(tokens.filter((t) => t.kind === 'import')).toHaveLength(1);
+    expect(tokens.filter((t) => t.kind === 'contract')).toHaveLength(2);
+  });
+});
+
+describe('extractPragmaVersion()', () => {
+  it('extracts the version constraint from a solidity pragma', () => {
+    const tokens = lex('pragma solidity ^0.8.20;');
+    expect(extractPragmaVersion(tokens)).toBe('^0.8.20');
+  });
+
+  it('extracts range version constraint', () => {
+    const tokens = lex('pragma solidity >=0.7.0 <0.9.0;');
+    expect(extractPragmaVersion(tokens)).toBe('>=0.7.0 <0.9.0');
+  });
+
+  it('returns null when only a non-solidity pragma is present', () => {
+    const tokens = lex('pragma abicoder v2;');
+    expect(extractPragmaVersion(tokens)).toBeNull();
+  });
+
+  it('returns null for empty token list', () => {
+    expect(extractPragmaVersion([])).toBeNull();
+  });
+});
