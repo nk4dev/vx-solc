@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -31,7 +32,12 @@ describe('CLI arguments parsing', () => {
       'cancun',
       '--base',
       '/custom/base',
+      '--via-ir',
       '--metadata',
+      '-I',
+      'libs',
+      '--include',
+      'vendor',
       '--remap',
       '@openzeppelin/=node_modules/@openzeppelin/',
     ]);
@@ -41,8 +47,17 @@ describe('CLI arguments parsing', () => {
     expect(args.runs).toBe(1000);
     expect(args.evm).toBe('cancun');
     expect(args.base).toBe('/custom/base');
+    expect(args.viaIR).toBe(true);
     expect(args.metadata).toBe(true);
+    expect(args.includePaths).toEqual(['libs', 'vendor']);
     expect(args.remappings['@openzeppelin/']).toBe('node_modules/@openzeppelin/');
+  });
+
+  it('throws on missing option values, invalid runs/remap, and unknown flags', () => {
+    expect(() => parseArgs(['--out'])).toThrow(/Missing value for --out/);
+    expect(() => parseArgs(['--runs', '-5', 'A.sol'])).toThrow(/Invalid value for --runs/);
+    expect(() => parseArgs(['--remap', 'bad', 'A.sol'])).toThrow(/Invalid remapping/);
+    expect(() => parseArgs(['--unknown', 'A.sol'])).toThrow(/Unknown option: --unknown/);
   });
 });
 
@@ -83,5 +98,45 @@ describe('runCli()', () => {
     const outDir = path.join(tmp, 'artifacts');
     const code = runCli([solPath, '--out', outDir, '--base', tmp]);
     expect(code).toBe(1);
+  });
+
+  it('returns 1 on invalid CLI flags', () => {
+    expect(runCli(['--unknown', 'A.sol'])).toBe(1);
+    expect(runCli(['--out'])).toBe(1);
+  });
+});
+
+describe('built dist package (Node CJS, ESM, and CLI)', () => {
+  const pkgRoot = path.resolve(__dirname, '..');
+
+  it('runs built dist/src/cli.js --help via Node.js', () => {
+    const out = execFileSync('node', [path.join(pkgRoot, 'dist/src/cli.js'), '--help'], {
+      encoding: 'utf-8',
+    });
+    expect(out).toContain('vxc — VX3 custom Solidity compiler');
+    expect(out).toContain('--via-ir');
+  });
+
+  it('loads CJS dist/index.js and Node ESM dist/esm/index.mjs cleanly', () => {
+    const cjsOut = execFileSync(
+      'node',
+      [
+        '-e',
+        'const pkg = require("./dist/index.js"); console.log(typeof pkg.VXCompiler, typeof pkg.parseArgs, typeof pkg.lex, typeof pkg.ImportResolver);',
+      ],
+      { cwd: pkgRoot, encoding: 'utf-8' }
+    );
+    expect(cjsOut.trim()).toBe('function function function function');
+
+    const esmOut = execFileSync(
+      'node',
+      [
+        '--input-type=module',
+        '-e',
+        'import { VXCompiler, parseArgs, lex, ImportResolver } from "./dist/esm/index.mjs"; console.log(typeof VXCompiler, typeof parseArgs, typeof lex, typeof ImportResolver);',
+      ],
+      { cwd: pkgRoot, encoding: 'utf-8' }
+    );
+    expect(esmOut.trim()).toBe('function function function function');
   });
 });

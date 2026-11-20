@@ -1,22 +1,74 @@
 {
   "name": "@vx3/solc-compiler",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "VXC — VX3 Solidity compiler frontend (lexer, import resolver, artifact pipeline) with solc backend",
-  "main": "index.ts",
-  "module": "index.ts",
-  "types": "index.ts",
-  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/esm/index.mjs",
+  "types": "dist/index.d.ts",
   "bin": {
-    "vxc": "./src/cli.ts",
-    "solc-compiler": "./src/cli.ts"
+    "vxc": "./dist/src/cli.js",
+    "solc-compiler": "./dist/src/cli.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/esm/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./compiler": {
+      "types": "./dist/src/compiler.d.ts",
+      "require": "./dist/src/compiler.js",
+      "default": "./dist/src/compiler.js"
+    },
+    "./lexer": {
+      "types": "./dist/src/lexer.d.ts",
+      "require": "./dist/src/lexer.js",
+      "default": "./dist/src/lexer.js"
+    },
+    "./resolver": {
+      "types": "./dist/src/resolver.d.ts",
+      "require": "./dist/src/resolver.js",
+      "default": "./dist/src/resolver.js"
+    },
+    "./cli": {
+      "types": "./dist/src/cli.d.ts",
+      "require": "./dist/src/cli.js",
+      "default": "./dist/src/cli.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/build-esm.mjs",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "bun test"
+  },
+  "keywords": [
+    "solidity",
+    "compiler",
+    "solc",
+    "vx3",
+    "vxc",
+    "web3"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nk4dev/vx-solc.git"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "solc": "^0.8.30"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6"
+    "@types/node": "^26.6.6",
+    "typescript": "^5.8.3"
   }
 }

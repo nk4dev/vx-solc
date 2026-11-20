@@ -148,6 +148,36 @@ describe('VXCompiler.compile()', () => {
     expect(result.sources.some((s) => s.includes('Math'))).toBe(true);
   });
 
+  it('forwards viaIR setting and avoids overwriting duplicate contract names on disk', () => {
+    writeSol(tmp, 'A.sol', 'import "./B.sol";\ncontract A {}');
+    writeSol(tmp, 'B.sol', 'contract B {}');
+    const outDir = path.join(tmp, 'build');
+    let capturedInput: { settings?: { viaIR?: boolean } } = {};
+    const c = new VXCompiler(
+      makeBackend({
+        compile: (inputJson: string) => {
+          capturedInput = JSON.parse(inputJson);
+          return makeBackend().compile(inputJson);
+        },
+      })
+    );
+    const result = c.compile({
+      entry: 'A.sol',
+      basePath: tmp,
+      outDir,
+      viaIR: true,
+    });
+    expect(capturedInput.settings?.viaIR).toBe(true);
+    expect(result.artifacts).toHaveLength(2);
+    expect(fs.existsSync(path.join(outDir, 'A.sol_MockContract.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outDir, 'B.sol_MockContract.json'))).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(path.join(outDir, 'vxc.manifest.json'), 'utf8'));
+    expect(manifest.contracts).toEqual([
+      { name: 'MockContract', source: 'A.sol', artifact: 'A.sol_MockContract.json' },
+      { name: 'MockContract', source: 'B.sol', artifact: 'B.sol_MockContract.json' },
+    ]);
+  });
+
   it('compiles real Solidity source with default solc backend', () => {
     writeSol(
       tmp,

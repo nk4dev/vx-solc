@@ -87,8 +87,10 @@ export class ImportResolver {
   }
 
   private applyRemappings(spec: string): string {
-    const m = this.opts.remappings ?? {};
-    for (const [k, v] of Object.entries(m)) {
+    const entries = Object.entries(this.opts.remappings ?? {}).sort(
+      (a, b) => b[0].length - a[0].length
+    );
+    for (const [k, v] of entries) {
       if (spec.startsWith(k)) {
         return v + spec.slice(k.length);
       }

@@ -9,8 +9,27 @@ export interface CliArgs {
   runs: number;
   evm?: string;
   base?: string;
+  viaIR: boolean;
   metadata: boolean;
   remappings: Record<string, string>;
+  includePaths: string[];
+}
+
+function requireOptionValue(argv: string[], index: number, flag: string): string {
+  if (index + 1 >= argv.length) {
+    throw new Error(`Missing value for ${flag}`);
+  }
+  return argv[index + 1];
+}
+
+function addRemapping(remappings: Record<string, string>, raw: string, flag: string): void {
+  const eqIdx = raw.indexOf('=');
+  if (eqIdx <= 0) {
+    throw new Error(`Invalid remapping "${raw}" for ${flag}; expected k=v`);
+  }
+  const k = raw.slice(0, eqIdx);
+  const v = raw.slice(eqIdx + 1);
+  remappings[k] = v;
 }
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -18,44 +37,50 @@ export function parseArgs(argv: string[]): CliArgs {
     out: 'artifacts/vxc',
     optimize: false,
     runs: 200,
+    viaIR: false,
     metadata: false,
     remappings: {},
+    includePaths: [],
   };
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--out' || a === '-o') {
-      args.out = argv[++i];
+      args.out = requireOptionValue(argv, i, a);
+      i++;
     } else if (a === '--optimize') {
       args.optimize = true;
     } else if (a === '--runs') {
-      const val = Number(argv[++i]);
-      if (!isNaN(val) && val >= 0) {
-        args.runs = val;
+      const raw = requireOptionValue(argv, i, a);
+      i++;
+      const val = Number(raw);
+      if (!Number.isInteger(val) || val < 0) {
+        throw new Error(`Invalid value for --runs: "${raw}"`);
       }
+      args.runs = val;
     } else if (a === '--evm') {
-      args.evm = argv[++i];
+      args.evm = requireOptionValue(argv, i, a);
+      i++;
     } else if (a === '--base') {
-      args.base = argv[++i];
+      args.base = requireOptionValue(argv, i, a);
+      i++;
+    } else if (a === '--via-ir') {
+      args.viaIR = true;
     } else if (a === '--metadata') {
       args.metadata = true;
+    } else if (a === '--include' || a === '-I') {
+      args.includePaths.push(requireOptionValue(argv, i, a));
+      i++;
     } else if (a === '--remap') {
-      const raw = argv[++i] ?? '';
-      const eqIdx = raw.indexOf('=');
-      if (eqIdx !== -1) {
-        const k = raw.slice(0, eqIdx);
-        const v = raw.slice(eqIdx + 1);
-        args.remappings[k] = v;
-      }
+      const raw = requireOptionValue(argv, i, a);
+      i++;
+      addRemapping(args.remappings, raw, a);
     } else if (a.startsWith('--remap=')) {
       const raw = a.slice('--remap='.length);
-      const eqIdx = raw.indexOf('=');
-      if (eqIdx !== -1) {
-        const k = raw.slice(0, eqIdx);
-        const v = raw.slice(eqIdx + 1);
-        args.remappings[k] = v;
-      }
-    } else if (!a.startsWith('-') && !args.entry) {
+      addRemapping(args.remappings, raw, '--remap');
+    } else if (a.startsWith('-')) {
+      throw new Error(`Unknown option: ${a}`);
+    } else if (!args.entry) {
       args.entry = a;
     }
   }
@@ -75,7 +100,9 @@ Options:
       --runs <n>       Optimizer runs (default: 200)
       --evm <version>  Target EVM version (e.g. cancun)
       --base <dir>     Base path for import resolution (default: cwd)
+      --via-ir         Compile via Yul IR pipeline (default: off)
       --metadata       Emit Solidity metadata in artifacts (default: off)
+  -I, --include <dir>  Add an import search path (repeatable)
       --remap k=v      Add an import remapping (repeatable)
   -h, --help           Show help
 `);
@@ -87,7 +114,15 @@ export function runCli(argv: string[] = process.argv.slice(2)): number {
     return 0;
   }
 
-  const args = parseArgs(argv);
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[error] ${msg}`);
+    return 1;
+  }
+
   if (!args.entry) {
     console.error('vxc: missing entry file');
     return 1;
@@ -101,7 +136,9 @@ export function runCli(argv: string[] = process.argv.slice(2)): number {
       outDir: args.out,
       optimizer: { enabled: args.optimize, runs: args.runs },
       evmVersion: args.evm,
+      viaIR: args.viaIR,
       remappings: args.remappings,
+      includePaths: args.includePaths,
       metadata: args.metadata,
     });
 
@@ -123,13 +160,14 @@ export function runCli(argv: string[] = process.argv.slice(2)): number {
       `vxc: compiled ${result.artifacts.length} contract(s) from ${result.sources.length} source(s) → ${args.out}`
     );
     return 0;
-  } catch (err: any) {
-    console.error(`[error] ${err.message ?? err}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[error] ${msg}`);
     return 1;
   }
 }
 
-if (import.meta.main || (typeof require !== 'undefined' && require.main === module)) {
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
   const code = runCli();
   if (code !== 0) {
     process.exit(code);

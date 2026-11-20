@@ -65,6 +65,22 @@ describe('ImportResolver', () => {
     expect([...graph.keys()].some((k) => k.includes('SafeMath'))).toBe(true);
   });
 
+  it('applies remappings using longest prefix match first', () => {
+    write(tmp, 'vendor/v1/Math.sol', 'library Math {}');
+    write(tmp, 'vendor/v2/Math.sol', 'library Math {}');
+    write(tmp, 'Token.sol', 'import "@lib/v2/Math.sol";\ncontract Token {}');
+    const r = new ImportResolver({
+      basePath: tmp,
+      remappings: {
+        '@lib/': 'vendor/v1/',
+        '@lib/v2/': 'vendor/v2/',
+      },
+    });
+    const graph = r.resolveGraph('Token.sol');
+    expect([...graph.keys()]).toContain('vendor/v2/Math.sol');
+    expect([...graph.keys()]).not.toContain('vendor/v1/Math.sol');
+  });
+
   it('caches files — circular imports do not loop infinitely', () => {
     write(tmp, 'A.sol', 'import "./B.sol";');
     write(tmp, 'B.sol', 'import "./A.sol";');

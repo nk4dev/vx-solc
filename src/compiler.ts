@@ -14,6 +14,7 @@ export interface CompileOptions {
   outDir?: string;
   optimizer?: { enabled: boolean; runs?: number };
   evmVersion?: string;
+  viaIR?: boolean;
   remappings?: Record<string, string>;
   includePaths?: string[];
   emitArtifacts?: boolean;
@@ -94,6 +95,7 @@ export class VXCompiler {
       settings: {
         optimizer: opts.optimizer ?? { enabled: false, runs: 200 },
         evmVersion: opts.evmVersion,
+        ...(opts.viaIR !== undefined ? { viaIR: opts.viaIR } : {}),
         outputSelection: {
           '*': {
             '*': [
@@ -161,15 +163,31 @@ export class VXCompiler {
 
   private writeArtifacts(outDir: string, artifacts: ContractArtifact[], srcs: ResolvedSource[]): void {
     fs.mkdirSync(outDir, { recursive: true });
+    const nameCounts = new Map<string, number>();
     for (const a of artifacts) {
-      const file = path.join(outDir, `${a.contractName}.json`);
+      nameCounts.set(a.contractName, (nameCounts.get(a.contractName) ?? 0) + 1);
+    }
+
+    const contractEntries: Array<{ name: string; source: string; artifact: string }> = [];
+    for (const a of artifacts) {
+      const hasDuplicate = (nameCounts.get(a.contractName) ?? 0) > 1;
+      const safeSource = a.sourcePath.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileName = hasDuplicate
+        ? `${safeSource}_${a.contractName}.json`
+        : `${a.contractName}.json`;
+      const file = path.join(outDir, fileName);
       fs.writeFileSync(file, JSON.stringify(a, null, 2));
+      contractEntries.push({
+        name: a.contractName,
+        source: a.sourcePath,
+        artifact: fileName,
+      });
     }
     const manifest = {
       compiler: 'vxc',
       generatedAt: new Date().toISOString(),
       sources: srcs.map((s) => s.virtualPath),
-      contracts: artifacts.map((a) => ({ name: a.contractName, source: a.sourcePath })),
+      contracts: contractEntries,
     };
     fs.writeFileSync(path.join(outDir, 'vxc.manifest.json'), JSON.stringify(manifest, null, 2));
   }
